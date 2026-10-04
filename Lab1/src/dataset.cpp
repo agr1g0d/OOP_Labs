@@ -1,9 +1,12 @@
 #include "dataset.h"
+#include <iostream>
 #include <fstream>
 #include <exception>
 #include <string_view>
 #include <charconv>
 #include <algorithm>
+#include <iomanip>
+#include <vector>
 
 namespace ds{
 
@@ -112,20 +115,26 @@ Dataset::Dataset(std::string path)
             pop_r(s);
             if (std::holds_alternative<NumericColumn>(columns[header[i].name]))
             {
-                if (s==MISSING_VALUE) 
+                if (s==MISSING_VALUE)
+                {
                     std::get<NumericColumn>(columns[header[i].name]).values.push_back(std::nullopt);
+                    std::get<NumericColumn>(columns[header[i].name]).missing++;
+                }
                 else                  
                     std::get<NumericColumn>(columns[header[i].name]).values.push_back(std::stod(s));
             } else
             {
                 if (s==MISSING_VALUE) 
+                {
+                    std::get<CategirialColumn>(columns[header[i].name]).missing++;
                     std::get<CategirialColumn>(columns[header[i].name]).values.push_back(std::nullopt);
+                }
                 else                  
                     std::get<CategirialColumn>(columns[header[i].name]).values.push_back(s);
             }
         }
     }
-    int size, prevsize;
+    int prevsize;
     if (std::holds_alternative<NumericColumn>(columns.begin()->second)) 
         prevsize = std::get<NumericColumn>(columns.begin()->second).values.size();
     else
@@ -143,5 +152,53 @@ Dataset::Dataset(std::string path)
  
 }
 
+void Dataset::print_info() const
+{
+    std::vector<std::pair<std::string, const Column*>> ordered_columns;
+    ordered_columns.reserve(columns.size());
+    for (const auto& [name, column] : columns)
+        ordered_columns.emplace_back(name, &column);
+    std::sort(ordered_columns.begin(), ordered_columns.end(),
+              [](const auto& left, const auto& right) {
+                  return left.first < right.first;
+              });
+
+    std::cout << "Objects: " << size
+              << "\nFeatures: " << columns.size() << "\n\n";
+    std::cout << std::left
+              << std::setw(4) << "#"
+              << std::setw(18) << "Feature"
+              << std::setw(14) << "Type"
+              << "Missed\n";
+
+    int total_missing = 0;
+    int columns_with_missing = 0;
+    for (std::size_t index = 0; index < ordered_columns.size(); ++index)
+    {
+        const auto& [name, column] = ordered_columns[index];
+        const bool is_numeric = std::holds_alternative<NumericColumn>(*column);
+        const int missing = is_numeric
+            ? std::get<NumericColumn>(*column).missing
+            : std::get<CategirialColumn>(*column).missing;
+
+        total_missing += missing;
+        if (missing > 0)
+            ++columns_with_missing;
+
+        const double missing_percent =
+            size == 0 ? 0.0 : 100.0 * missing / size;
+        std::cout << std::left
+                  << std::setw(4) << index
+                  << std::setw(18) << name
+                  << std::setw(14)
+                  << (is_numeric ? "numeric" : "categorial")
+                  << missing << " ("
+                  << std::fixed << std::setprecision(2)
+                  << missing_percent << "%)\n";
+    }
+
+    std::cout << "\nTotall missed: " << total_missing
+              << " in " << columns_with_missing << " features\n";
+}
 
 }

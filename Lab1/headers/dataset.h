@@ -10,21 +10,18 @@ const char SPLIT = ',';
 const std::string MISSING_VALUE = "?";
 const int _UNIQUE = 2;
 
-enum TypeColumn
-{
-    None,
-    Numeric,
-    Categorial
-};
-
 struct NumericColumn
 {
     std::vector<std::optional<double>> values;
+    int missing;
+    NumericColumn() : missing(0) {}
 };
 
 struct CategirialColumn
 {
     std::vector<std::optional<std::string>> values;
+    int missing;
+    CategirialColumn() : missing(0) {}
 };
 
 using Column = std::variant<NumericColumn, CategirialColumn>;
@@ -33,8 +30,10 @@ class Dataset
 {
 private:
     std::unordered_map<std::string, Column> columns;
+    int size;
 public:
     Dataset(std::string path);
+    void print_info() const;
 private:
     struct ColumnInfo
     {
