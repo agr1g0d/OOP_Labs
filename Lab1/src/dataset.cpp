@@ -6,7 +6,10 @@
 #include <charconv>
 #include <algorithm>
 #include <iomanip>
+#include <sstream>
+#include <tuple>
 #include <vector>
+#include <cmath>
 
 namespace ds{
 
@@ -16,7 +19,7 @@ inline void pop_r(std::string& s)
         s.pop_back();
 }
 
-Dataset::Dataset(std::string path)
+Dataset::Dataset(const std::string& path)
 {
     std::ifstream file(path, std::ios::in);
     if (!file.is_open()) throw std::runtime_error("error while opening file: " + path);
@@ -134,22 +137,28 @@ Dataset::Dataset(std::string path)
             }
         }
     }
-    int prevsize;
+    int prev_records;
     if (std::holds_alternative<NumericColumn>(columns.begin()->second)) 
-        prevsize = std::get<NumericColumn>(columns.begin()->second).values.size();
+        prev_records = std::get<NumericColumn>(columns.begin()->second).values.size();
     else
-        prevsize = std::get<CategirialColumn>(columns.begin()->second).values.size();
+        prev_records = std::get<CategirialColumn>(columns.begin()->second).values.size();
 
     for (auto it = columns.begin(); it != columns.end(); ++it)
     {
         if (std::holds_alternative<NumericColumn>(it->second)) 
-            size = std::get<NumericColumn>(it->second).values.size();
+            records = std::get<NumericColumn>(it->second).values.size();
         else                                       
-            size = std::get<CategirialColumn>(it->second).values.size();
-        if (size != prevsize) throw std::runtime_error("columns have different sizes\n");
-        prevsize = size;
+            records = std::get<CategirialColumn>(it->second).values.size();
+        if (records != prev_records) throw std::runtime_error("columns have different sizes\n");
+        prev_records = records;
     }
- 
+    features_sorted.reserve(records);
+    std::sort(header.begin(), header.end(), [](const auto& left, const auto& right)
+        { return left.name < right.name; });
+    for (int i = 0; i < features; ++i)
+    {
+        features_sorted.emplace_back(header[i].name);
+    }
 }
 
 void Dataset::print_info() const
@@ -163,7 +172,7 @@ void Dataset::print_info() const
                   return left.first < right.first;
               });
 
-    std::cout << "Objects: " << size
+    std::cout << "Objects: " << records
               << "\nFeatures: " << columns.size() << "\n\n";
     std::cout << std::left
               << std::setw(4) << "#"
@@ -186,7 +195,7 @@ void Dataset::print_info() const
             ++columns_with_missing;
 
         const double missing_percent =
-            size == 0 ? 0.0 : 100.0 * missing / size;
+            records == 0 ? 0.0 : 100.0 * missing / records;
         std::cout << std::left
                   << std::setw(4) << index
                   << std::setw(18) << name
@@ -200,5 +209,142 @@ void Dataset::print_info() const
     std::cout << "\nTotall missed: " << total_missing
               << " in " << columns_with_missing << " features\n";
 }
+
+void Dataset::print_stat_by_i(int i) const
+{
+    const Column& col = operator[](i);
+    if (std::holds_alternative<NumericColumn>(col))
+    {
+        int missing = std::get<NumericColumn>(col).missing;
+        double min, max, mean, var, q[5];
+        std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
+        std::sort(vals.begin(), vals.end(),
+            [](const std::optional<double>& left,
+            const std::optional<double>& right)
+            {
+                return !left.has_value() || (right.has_value() && (left.value() < right.value()));
+            });
+        min = vals[missing].value();
+        max = vals.back().value();
+
+        mean = var = 0;
+        for (auto& i : vals) mean += i.value_or(0);
+        mean /= (records - missing);
+
+        for (auto& i : vals)
+            if (i.has_value())
+                var += std::pow(i.value() - mean, 2);
+        var /= (records - missing - 1);
+
+        double p[5] = {0.05, 0.25, 0.5, 0.75, 0.95};
+        for (int i = 0; i < 5; ++i)
+        {
+            double pos = (records - 1 - missing)*p[i] + 1.0;
+            if (std::fabs(pos - std::round(pos)) < EPS)
+                q[i] = vals[(int)pos + missing].value();
+            else
+                q[i] = vals[static_cast<int>(pos) + missing].value()
+                    + (vals[static_cast<int>(pos) + missing + 1].value()
+                    - vals[static_cast<int>(pos) + missing].value()
+                    ) * (pos - std::trunc(pos));
+        }
+
+        std::cout << "\nFeature " << i << ": " << features_sorted[i]
+                  << " (numeric)\n\n"
+                  << "  missing: " << missing << '\n'
+                  << "  min: " << min << "    max: " << max << '\n'
+                  << "  mean: " << mean << "   var: " << var << "\n\n"
+                  << "  q05: " << q[0] << '\n'
+                  << "  q25: " << q[1] << '\n'
+                  << "  q50: " << q[2] << '\n'
+                  << "  q75: " << q[3] << '\n'
+                  << "  q95: " << q[4] << "\n\n";
+
+        double segment = (max-min) / NUMERIC_HISTOGRAM_INTERVALS;
+        double bound = min;
+        std::vector<std::tuple<double, double, int>> histogram(NUMERIC_HISTOGRAM_INTERVALS);
+        for (auto& c : histogram)
+        {
+            c = {bound, bound + segment, 0};
+            bound += segment;
+        }
+        auto it = histogram.begin();
+        for (const auto& d : vals)
+        {
+            if (!d.has_value()) continue;
+            for (;it != histogram.end() && d.value() >= std::get<1>(*it); ++it);
+            if (it == histogram.end()) 
+                ++std::get<2>(histogram.back());
+            else ++std::get<2>(*it);
+        }
+        
+        std::cout << "  Histogram:\n";
+        for (const auto& [left, right, frequency] : histogram)
+        {
+            std::string bracket = std::tuple{left, right, frequency}==histogram.back() 
+                    ? "] " : ") "; 
+            std::ostringstream interval;
+            interval << '[' << std::fixed << std::setprecision(2)
+                     << left << ", " << right << bracket;
+            const std::string bar(std::lround(
+                static_cast<double>(frequency) / records
+                * MAX_HISTOGRAM_LINE), '#');
+
+            std::cout << "  " << std::left << std::setw(24) << interval.str()
+                      << std::setw(MAX_HISTOGRAM_LINE + 2) << bar
+                      << std::right << std::setw(6) << frequency << '\n';
+        }
+    } else
+    {
+        int missing = std::get<CategirialColumn>(col).missing;
+        const std::vector<std::optional<std::string>> vals = std::get<CategirialColumn>(col).values;
+        std::vector<std::pair<std::string, int>> categories;
+
+        for (const auto& c : vals)
+        {
+            if (!c.has_value()) continue;
+            const auto& it = std::find_if(categories.begin(), categories.end(), 
+                [&c](const std::pair<std::string, int>& p){return p.first == c.value();});
+            if (it == categories.end())
+                categories.push_back({c.value(), 1});
+            else
+                it->second++;            
+        }
+
+
+        std::cout << "\nFeature " << i << ": " << features_sorted[i]
+                  << " (categorial)\n\n"
+                  << "  missing: " << missing << "\n\n"
+                  << "  Categories:\n";
+
+        for (const auto& [category, frequency] : categories)
+            std::cout << "    " << std::left << std::setw(24) << category << ": "
+                      << frequency << '\n';
+
+        std::cout << "\n  Histogram:\n";
+        for (const auto& [category, frequency] : categories)
+        {
+            const std::string bar(std::lround(
+                static_cast<double>(frequency) / records
+                * MAX_HISTOGRAM_LINE), '#');
+            std::cout << "    " << std::left << std::setw(24) << category
+                      << std::setw(MAX_HISTOGRAM_LINE + 2) << bar
+                      << std::right << std::setw(6) << frequency << '\n';
+        }
+    }
+}
+
+const Column& Dataset::operator[](const std::string& s) const
+{
+    if (!columns.contains(s)) throw std::out_of_range("dataset has no this feature");
+    return columns.at(s);
+}
+
+const Column& Dataset::operator[](int i) const
+{
+    if (i < 0 || i >= columns.size()) throw std::out_of_range("index is out of bounds");
+    return columns.at(features_sorted[i]);
+}
+
 
 }
