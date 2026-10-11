@@ -13,7 +13,7 @@ void print_menu()
     std::cout << "\n=== Menu ===\n"
               << "1 - Print dataset summary\n"
               << "2 - Print feature statistics\n"
-              << "3 - Preprocess and exit\n"
+              << "3 - Preprocess and write dataset\n"
               << "0 - Exit without preprocessing\n"
               << "Choose an action: ";
 }
@@ -40,14 +40,15 @@ void print_statistics_placeholder(const ds::Dataset& dataset)
             continue;
         }
         if (!i) return;
-        dataset.print_stat_by_i(i);
+        dataset.print_stat_by_i(i-1);
 
     }
 }
 
-void preprocess_and_exit_placeholder()
+void preprocess_and_write(ds::Dataset& dataset)
 {
-    std::cout << "\n[Place for preprocessing and dataset saving implementation]\n";
+    dataset.fill_missing();
+    std::cout << "";
 }
 } // namespace
 
@@ -76,7 +77,7 @@ int main()
                     print_statistics_placeholder(dataset);
                     break;
                 case '3':
-                    preprocess_and_exit_placeholder();
+                    preprocess_and_write(dataset);
                     running = false;
                     break;
                 case '0':

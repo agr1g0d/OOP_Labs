@@ -19,8 +19,27 @@ inline void pop_r(std::string& s)
         s.pop_back();
 }
 
-Dataset::Dataset(const std::string& path)
+Dataset::Dataset() {}
+
+Dataset::Dataset(const std::string& path, LoadType t)
 {
+    switch(t)
+    {
+        case LoadType::CSV:
+            load_csv(path); break;
+        case LoadType::binary:
+            load_binary(path); break;
+        default: std::cout << "unknown load type\n";
+    }
+}
+
+void Dataset::load_csv(const std::string& path)
+{
+    if (!columns.empty()) columns.clear();
+    if (!features_sorted.empty()) features_sorted.clear();
+    if (!stats.empty()) stats.clear();
+    
+
     std::ifstream file(path, std::ios::in);
     if (!file.is_open()) throw std::runtime_error("error while opening file: " + path);
     if (file.eof()) throw std::runtime_error("CSV is empty\n");
@@ -34,6 +53,9 @@ Dataset::Dataset(const std::string& path)
             header.push_back(Dataset::ColumnInfo());
     header.push_back(Dataset::ColumnInfo());
     features = header.size();
+    columns.reserve(features);
+    stats.reserve(features);
+
 
     std::string s;
     while (std::getline(file, s))         //check column types;
@@ -95,7 +117,6 @@ Dataset::Dataset(const std::string& path)
         if (i != features) throw std::runtime_error("amount of features less than in the header");
     }
 
-    columns.reserve(features);
     file.clear();
     file.seekg(0);
     for (int i = 0; i < features; ++i)
@@ -104,9 +125,13 @@ Dataset::Dataset(const std::string& path)
         std::getline(file, header[i].name, last);
         pop_r(header[i].name);
         if (header[i].is_num && header[i].unique > _UNIQUE)
+        {
             columns[header[i].name] = NumericColumn();
+        }
         else
+        {
             columns[header[i].name] = CategirialColumn();
+        }
     }        
     while (!file.eof())
     {
@@ -121,7 +146,7 @@ Dataset::Dataset(const std::string& path)
                 if (s==MISSING_VALUE)
                 {
                     std::get<NumericColumn>(columns[header[i].name]).values.push_back(std::nullopt);
-                    std::get<NumericColumn>(columns[header[i].name]).missing++;
+                    header[i].missing++;
                 }
                 else                  
                     std::get<NumericColumn>(columns[header[i].name]).values.push_back(std::stod(s));
@@ -129,8 +154,8 @@ Dataset::Dataset(const std::string& path)
             {
                 if (s==MISSING_VALUE) 
                 {
-                    std::get<CategirialColumn>(columns[header[i].name]).missing++;
                     std::get<CategirialColumn>(columns[header[i].name]).values.push_back(std::nullopt);
+                    header[i].missing++;
                 }
                 else                  
                     std::get<CategirialColumn>(columns[header[i].name]).values.push_back(s);
@@ -152,12 +177,57 @@ Dataset::Dataset(const std::string& path)
         if (records != prev_records) throw std::runtime_error("columns have different sizes\n");
         prev_records = records;
     }
-    features_sorted.reserve(records);
+    features_sorted.reserve(features);
     std::sort(header.begin(), header.end(), [](const auto& left, const auto& right)
         { return left.name < right.name; });
     for (int i = 0; i < features; ++i)
     {
         features_sorted.emplace_back(header[i].name);
+        bool numeric = header[i].is_num && header[i].unique > _UNIQUE;
+        if (numeric)
+            stats.emplace_back(header[i].missing, NumStat());
+        else
+            stats.emplace_back(header[i].missing, CatStat());
+    }
+
+    calculate_stats();
+}
+
+void Dataset::load_binary(const std::string& path)
+{
+    if (!columns.empty()) columns.clear();
+    if (!features_sorted.empty()) features_sorted.clear();
+    if (!stats.empty()) stats.clear();
+
+    std::ifstream in(path, std::ios::in | std::ios::binary);
+    if (!in) throw std::runtime_error("binary input file not found.");
+
+    Matrix m;
+    std::size_t feats;
+
+    in.read(reinterpret_cast<char*>(&m.n_cols), sizeof(std::size_t));
+    in.read(reinterpret_cast<char*>(&m.n_rows), sizeof(std::size_t));
+    in.read(reinterpret_cast<char*>(&feats), sizeof(std::size_t));
+    m.cols.resize(m.n_cols);
+    m.data.resize(m.n_rows * m.n_cols);
+    m.cols_per_feature.resize(feats);
+    std::size_t i = 0;
+    for (std::size_t& n : m.cols_per_feature)
+    {
+        in.read(reinterpret_cast<char*>(&n), sizeof(std::size_t));
+        for (std::size_t j = 0; j < n; ++j, ++i)
+        {
+            std::size_t len;
+            in.read(reinterpret_cast<char*>(&len), sizeof(std::size_t));
+            in.read(m.cols[i].data(), len);
+        }
+    }
+    in.read(reinterpret_cast<char*>(m.data.data()), m.n_rows*m.n_cols*sizeof(double));
+    if (in.fail()) throw std::runtime_error("binary reading error.");
+
+    for (std::size_t n : m.cols_per_feature)
+    {
+
     }
 }
 
@@ -186,9 +256,7 @@ void Dataset::print_info() const
     {
         const auto& [name, column] = ordered_columns[index];
         const bool is_numeric = std::holds_alternative<NumericColumn>(*column);
-        const int missing = is_numeric
-            ? std::get<NumericColumn>(*column).missing
-            : std::get<CategirialColumn>(*column).missing;
+        const int missing = stats[index].missing;
 
         total_missing += missing;
         if (missing > 0)
@@ -197,7 +265,7 @@ void Dataset::print_info() const
         const double missing_percent =
             records == 0 ? 0.0 : 100.0 * missing / records;
         std::cout << std::left
-                  << std::setw(4) << index
+                  << std::setw(4) << index+1
                   << std::setw(18) << name
                   << std::setw(14)
                   << (is_numeric ? "numeric" : "categorial")
@@ -210,46 +278,81 @@ void Dataset::print_info() const
               << " in " << columns_with_missing << " features\n";
 }
 
+void Dataset::calculate_stats()
+{
+    for (int i = 0; i < columns.size(); ++i)
+    {
+        auto& col = operator[](i);
+        int missing = stats[i].missing;
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
+            std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
+            std::sort(vals.begin(), vals.end(),
+                [](const std::optional<double>& left,
+                const std::optional<double>& right)
+                {
+                    return !left.has_value() || (right.has_value() && (left.value() < right.value()));
+                });
+            min = vals[missing].value();
+            max = vals.back().value();
+    
+            mean = var = 0;
+            for (auto& j : vals) mean += j.value_or(0);
+            mean /= (records - missing);
+    
+            for (auto& j : vals)
+                if (j.has_value())
+                    var += std::pow(j.value() - mean, 2);
+            var /= (records - missing - 1);
+    
+            double p[5] = {0.05, 0.25, 0.5, 0.75, 0.95};
+            for (int j = 0; j < 5; ++j)
+            {
+                double pos = (records - 1 - missing)*p[j] + 1.0;
+                if (std::fabs(pos - std::round(pos)) < EPS)
+                    q[j] = vals[(int)pos + missing].value();
+                else
+                    q[j] = vals[static_cast<int>(pos) + missing].value()
+                        + (vals[static_cast<int>(pos) + missing + 1].value()
+                        - vals[static_cast<int>(pos) + missing].value()
+                        ) * (pos - std::trunc(pos));
+            }
+        } else
+        {
+            std::vector<std::optional<std::string>> vals = std::get<CategirialColumn>(col).values;
+            auto& categories = std::get<CatStat>(stats[i].stat).categories;
+    
+            for (const auto& c : vals)
+            {
+                if (!c.has_value()) continue;
+                const auto& it = std::find_if(categories.begin(), categories.end(), 
+                    [&c](const std::pair<std::string, int>& p){return p.first == c.value();});
+                if (it == categories.end())
+                    categories.push_back({c.value(), 1});
+                else
+                    it->second++;            
+            }
+        }
+    }
+}
+
 void Dataset::print_stat_by_i(int i) const
 {
     const Column& col = operator[](i);
+    int missing = stats[i].missing;
     if (std::holds_alternative<NumericColumn>(col))
     {
-        int missing = std::get<NumericColumn>(col).missing;
-        double min, max, mean, var, q[5];
+        const auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
         std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
         std::sort(vals.begin(), vals.end(),
-            [](const std::optional<double>& left,
-            const std::optional<double>& right)
-            {
-                return !left.has_value() || (right.has_value() && (left.value() < right.value()));
-            });
-        min = vals[missing].value();
-        max = vals.back().value();
+                [](const std::optional<double>& left,
+                const std::optional<double>& right)
+                {
+                    return !left.has_value() || (right.has_value() && (left.value() < right.value()));
+                });
 
-        mean = var = 0;
-        for (auto& i : vals) mean += i.value_or(0);
-        mean /= (records - missing);
-
-        for (auto& i : vals)
-            if (i.has_value())
-                var += std::pow(i.value() - mean, 2);
-        var /= (records - missing - 1);
-
-        double p[5] = {0.05, 0.25, 0.5, 0.75, 0.95};
-        for (int i = 0; i < 5; ++i)
-        {
-            double pos = (records - 1 - missing)*p[i] + 1.0;
-            if (std::fabs(pos - std::round(pos)) < EPS)
-                q[i] = vals[(int)pos + missing].value();
-            else
-                q[i] = vals[static_cast<int>(pos) + missing].value()
-                    + (vals[static_cast<int>(pos) + missing + 1].value()
-                    - vals[static_cast<int>(pos) + missing].value()
-                    ) * (pos - std::trunc(pos));
-        }
-
-        std::cout << "\nFeature " << i << ": " << features_sorted[i]
+        std::cout << "\nFeature " << i+1 << ": " << features_sorted[i]
                   << " (numeric)\n\n"
                   << "  missing: " << missing << '\n'
                   << "  min: " << min << "    max: " << max << '\n'
@@ -296,23 +399,10 @@ void Dataset::print_stat_by_i(int i) const
         }
     } else
     {
-        int missing = std::get<CategirialColumn>(col).missing;
         const std::vector<std::optional<std::string>> vals = std::get<CategirialColumn>(col).values;
-        std::vector<std::pair<std::string, int>> categories;
+        const auto& categories = std::get<CatStat>(stats[i].stat).categories;
 
-        for (const auto& c : vals)
-        {
-            if (!c.has_value()) continue;
-            const auto& it = std::find_if(categories.begin(), categories.end(), 
-                [&c](const std::pair<std::string, int>& p){return p.first == c.value();});
-            if (it == categories.end())
-                categories.push_back({c.value(), 1});
-            else
-                it->second++;            
-        }
-
-
-        std::cout << "\nFeature " << i << ": " << features_sorted[i]
+        std::cout << "\nFeature " << i+1 << ": " << features_sorted[i]
                   << " (categorial)\n\n"
                   << "  missing: " << missing << "\n\n"
                   << "  Categories:\n";
@@ -334,6 +424,39 @@ void Dataset::print_stat_by_i(int i) const
     }
 }
 
+void Dataset::save_binary(const std::string& path)
+{
+    fill_missing();
+    scale_nums();
+    std::vector<EncodedColumn> data = std::move(one_hot());
+    Matrix m = build_matrix(data, records);
+
+    int n = 0;
+    for (std::size_t i : m.cols_per_feature) n += i;
+    if (n != m.n_cols) throw std::runtime_error("bad matrix.");
+
+    std::ofstream out(path, std::ios::out | std::ios::binary);
+    if (!out) throw std::runtime_error("Output file not found.");
+
+    std::size_t rows = m.n_rows, cols = m.n_cols, feats = m.cols_per_feature.size();
+    out.write(reinterpret_cast<const char*>(&rows), sizeof(std::size_t));               //rows
+    out.write(reinterpret_cast<const char*>(&cols), sizeof(std::size_t));               //cols
+    out.write(reinterpret_cast<const char*>(&feats), sizeof(std::size_t));              //features
+    std::size_t k = 0;
+    for (std::size_t i : m.cols_per_feature)
+    {
+        out.write(reinterpret_cast<const char*>(&i), sizeof(std::size_t));              //cols per feature
+        for(std::size_t j = 0; j < i; ++j, ++k)
+        {
+            std::size_t len = m.cols[k].size();
+            out.write(reinterpret_cast<const char*>(&len), sizeof(std::size_t));        //column name length
+            out.write(m.cols[k].data(), len);                                           //column name
+        }
+    }
+    out.write(reinterpret_cast<const char*>(m.data.data()),                             //data
+        m.data.size() * sizeof(double));
+}
+
 const Column& Dataset::operator[](const std::string& s) const
 {
     if (!columns.contains(s)) throw std::out_of_range("dataset has no this feature");
@@ -346,5 +469,75 @@ const Column& Dataset::operator[](int i) const
     return columns.at(features_sorted[i]);
 }
 
+void Dataset::fill_missing()
+{
+    for (int i = 0; i < stats.size(); ++i)
+    {
+        if (stats[i].missing == 0) continue;
+        if (std::holds_alternative<NumStat>(stats[i].stat))
+        {
+            for (auto& x : std::get<NumericColumn>(columns[features_sorted[i]]).values)
+                if (!x.has_value()) x = std::get<NumStat>(stats[i].stat).q[2];
+        } else
+        {
+            for (auto& x : std::get<CategirialColumn>(columns[features_sorted[i]]).values)
+                if (!x.has_value()) x = FILLED_MISSING_VALUE;
+        }
+    }
+}
+
+void Dataset::scale_nums()
+{
+    for (int i = 0; i < stats.size(); ++i)
+    {
+        if (std::holds_alternative<CategirialColumn>(columns[features_sorted[i]])) continue;
+        auto& col = std::get<NumericColumn>(columns[features_sorted[i]]).values;
+        auto& stat = std::get<NumStat>(stats[i].stat);
+        for (auto& v : col)
+            v = (v.value() - stat.min) / (stat.max - stat.min);
+    }
+}
+
+std::vector<EncodedColumn> Dataset::one_hot() const
+{
+    std::vector<EncodedColumn> result;
+    for (int i = 0; i < stats.size(); ++i)
+    {
+        const auto& col = operator[](i);
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            EncodedColumn ecol = {features_sorted[i], {}};
+            for (const auto& v : std::get<NumericColumn>(col).values)
+                ecol.values.push_back(v.value());
+            result.push_back(std::move(ecol));
+        } else
+        {
+            auto cats = std::get<CatStat>(stats[i].stat).categories;
+            if (stats[i].missing) cats.push_back({FILLED_MISSING_VALUE, stats[i].missing});
+            for (auto [cat, n] : cats)
+            {
+                EncodedColumn ecol = {features_sorted[i] + "_" + cat, {}};
+                for (const auto& v : std::get<CategirialColumn>(col).values)
+                    ecol.values.push_back(v.value() == cat ? 1.0 : 0.0);
+                result.push_back(std::move(ecol));
+            }
+        }
+    }
+    return result;
+}
+
+Matrix Dataset::build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows)
+{
+    Matrix m = {rows, encoded_data.size(), 
+        std::vector<std::string>(encoded_data.size()), 
+        std::vector<double>(encoded_data.size() * rows)};
+    for (int j = 0; j < m.n_cols; ++j)
+    {
+        m.cols[j] = encoded_data[j].name;
+        for (int i = 0; i < rows; ++i)
+            m.data[i*m.n_cols + j] = encoded_data[j].values[i];
+    }
+    return m;
+}
 
 }

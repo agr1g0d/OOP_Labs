@@ -11,37 +11,78 @@ const std::string MISSING_VALUE = "?";
 const int _UNIQUE = 2;
 const double EPS = 1e-9;
 const int NUMERIC_HISTOGRAM_INTERVALS = 8;
-const int MAX_HISTOGRAM_LINE = 50; 
+const int MAX_HISTOGRAM_LINE = 50;
+const std::string FILLED_MISSING_VALUE = "__MISSING__";
 
+enum class LoadType
+{
+    CSV,
+    binary
+};
+struct NumStat
+{
+    double min;
+    double max;
+    double mean;
+    double var;
+    double q[5];
+};
+struct CatStat
+{
+    std::vector<std::pair<std::string, int>> categories;
+};
+struct Stat
+{
+    int missing;
+    std::variant<NumStat, CatStat> stat;
+};
 struct NumericColumn
 {
     std::vector<std::optional<double>> values;
-    int missing;
-    NumericColumn() : missing(0) {}
 };
-
 struct CategirialColumn
 {
     std::vector<std::optional<std::string>> values;
-    int missing;
-    CategirialColumn() : missing(0) {}
 };
-
 using Column = std::variant<NumericColumn, CategirialColumn>;
+struct EncodedColumn
+{
+    std::string name;
+    std::vector<double> values;
+};
+struct Matrix
+{
+    std::size_t n_rows;
+    std::size_t n_cols;
+    std::vector<std::string> cols;
+c    std::vector<double> data;
+};
 
 class Dataset
 {
 private:
     std::unordered_map<std::string, Column> columns;
     std::vector<std::string> features_sorted;
+    std::vector<Stat> stats;
     int records;
+
+    Matrix build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows);
+    void calculate_stats();
+    void fill_missing();
+    void scale_nums();
+    std::vector<EncodedColumn> one_hot() const;
+
 public:
-    Dataset(const std::string& path);
-    void print_info() const;
-    void print_stat_by_i(int i) const;
+    Dataset();
+    Dataset(const std::string& path, LoadType t);
+    void load_csv(const std::string& path);
+    void load_binary(const std::string& path);
     const Column& operator[](const std::string& s) const;
     const Column& operator[](int i) const;
+    void print_info() const;
+    void print_stat_by_i(int i) const;
     inline int size() const { return  columns.size(); }
+    void save_binary(const std::string& path);
 
 private:
     struct ColumnInfo
@@ -50,8 +91,8 @@ private:
         bool is_num;
         int unique;
         std::vector<double> unique_vals;
-
-        ColumnInfo() : is_num(1), unique(0) 
+        int missing;
+        ColumnInfo() : is_num(1), unique(0), missing(0) 
         { unique_vals.reserve(2); }
     };
 };
