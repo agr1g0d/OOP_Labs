@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <exception>
 #include <limits>
 #include <string>
@@ -7,6 +8,7 @@
 namespace
 {
 constexpr const char* CSV_PATH = "../data/Autism-Adult-Data.csv";
+constexpr const char* BIN_PATH = "../data/Autism-Adult-Data.bin";
 
 void print_menu()
 {
@@ -14,7 +16,7 @@ void print_menu()
               << "1 - Print dataset summary\n"
               << "2 - Print feature statistics\n"
               << "3 - Preprocess and write dataset\n"
-              << "0 - Exit without preprocessing\n"
+              << "0 - Exit\n"
               << "Choose an action: ";
 }
 
@@ -47,8 +49,11 @@ void print_statistics_placeholder(const ds::Dataset& dataset)
 
 void preprocess_and_write(ds::Dataset& dataset)
 {
-    dataset.fill_missing();
-    std::cout << "";
+    dataset.save_binary_matrix(BIN_PATH);
+    std::ifstream csv(CSV_PATH, std::ios::binary | std::ios::ate);
+    std::ifstream bin(BIN_PATH, std::ios::binary | std::ios::ate);
+    std::cout << "CSV:    " << csv.tellg() << " bytes\n";
+    std::cout << "Binary: " << bin.tellg() << " bytes\n";
 }
 } // namespace
 
@@ -81,7 +86,7 @@ int main()
                     running = false;
                     break;
                 case '0':
-                    std::cout << "\nExiting without preprocessing.\n";
+                    std::cout << "\nExiting.\n";
                     running = false;
                     break;
                 default:

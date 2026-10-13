@@ -36,3 +36,18 @@ if(ALL_LAB_SOURCES)
         ${ALL_HEADER_DIRECTORIES}
     )
 endif()
+
+enable_testing()
+
+add_executable(dataset_tests
+    tests/dataset_tests.cpp
+    Lab1/src/dataset.cpp
+)
+target_include_directories(dataset_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab1/headers"
+)
+
+add_test(
+    NAME dataset_tests
+    COMMAND dataset_tests "${CMAKE_CURRENT_SOURCE_DIR}/data/Autism-Adult-Data.csv"
+)

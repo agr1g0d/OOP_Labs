@@ -10,6 +10,7 @@
 #include <tuple>
 #include <vector>
 #include <cmath>
+#include <limits>
 
 namespace ds{
 
@@ -21,16 +22,9 @@ inline void pop_r(std::string& s)
 
 Dataset::Dataset() {}
 
-Dataset::Dataset(const std::string& path, LoadType t)
+Dataset::Dataset(const std::string& path)
 {
-    switch(t)
-    {
-        case LoadType::CSV:
-            load_csv(path); break;
-        case LoadType::binary:
-            load_binary(path); break;
-        default: std::cout << "unknown load type\n";
-    }
+    load_csv(path);
 }
 
 void Dataset::load_csv(const std::string& path)
@@ -42,13 +36,16 @@ void Dataset::load_csv(const std::string& path)
 
     std::ifstream file(path, std::ios::in);
     if (!file.is_open()) throw std::runtime_error("error while opening file: " + path);
-    if (file.eof()) throw std::runtime_error("CSV is empty\n");
-    
     std::vector<Dataset::ColumnInfo> header;
     int features;
 
-    char c; file.get(c);
-    for (; c != '\n'; file.get(c))
+    std::string header_line;
+    if (!std::getline(file, header_line) || header_line.empty())
+        throw std::runtime_error("CSV is empty\n");
+    pop_r(header_line);
+    if (header_line.empty())
+        throw std::runtime_error("CSV is empty\n");
+    for (char c : header_line)
         if (c == SPLIT)
             header.push_back(Dataset::ColumnInfo());
     header.push_back(Dataset::ColumnInfo());
@@ -167,6 +164,8 @@ void Dataset::load_csv(const std::string& path)
         prev_records = std::get<NumericColumn>(columns.begin()->second).values.size();
     else
         prev_records = std::get<CategirialColumn>(columns.begin()->second).values.size();
+    if (prev_records == 0)
+        throw std::runtime_error("CSV has no records\n");
 
     for (auto it = columns.begin(); it != columns.end(); ++it)
     {
@@ -193,42 +192,37 @@ void Dataset::load_csv(const std::string& path)
     calculate_stats();
 }
 
-void Dataset::load_binary(const std::string& path)
+Matrix load_binary_matrix(const std::string& path)
 {
-    if (!columns.empty()) columns.clear();
-    if (!features_sorted.empty()) features_sorted.clear();
-    if (!stats.empty()) stats.clear();
-
     std::ifstream in(path, std::ios::in | std::ios::binary);
     if (!in) throw std::runtime_error("binary input file not found.");
 
     Matrix m;
-    std::size_t feats;
 
-    in.read(reinterpret_cast<char*>(&m.n_cols), sizeof(std::size_t));
     in.read(reinterpret_cast<char*>(&m.n_rows), sizeof(std::size_t));
-    in.read(reinterpret_cast<char*>(&feats), sizeof(std::size_t));
+    in.read(reinterpret_cast<char*>(&m.n_cols), sizeof(std::size_t));
+    if (in.fail())
+        throw std::runtime_error("binary reading error.");
+    if (m.n_cols != 0 &&
+        m.n_rows > std::numeric_limits<std::size_t>::max() / m.n_cols)
+        throw std::runtime_error("binary matrix dimensions are too large.");
     m.cols.resize(m.n_cols);
     m.data.resize(m.n_rows * m.n_cols);
-    m.cols_per_feature.resize(feats);
-    std::size_t i = 0;
-    for (std::size_t& n : m.cols_per_feature)
+    for (auto& name : m.cols)
     {
-        in.read(reinterpret_cast<char*>(&n), sizeof(std::size_t));
-        for (std::size_t j = 0; j < n; ++j, ++i)
-        {
-            std::size_t len;
-            in.read(reinterpret_cast<char*>(&len), sizeof(std::size_t));
-            in.read(m.cols[i].data(), len);
-        }
+        std::size_t len;
+        in.read(reinterpret_cast<char*>(&len), sizeof(std::size_t));
+        if (in.fail())
+            throw std::runtime_error("binary reading error.");
+        name.resize(len);
+        in.read(name.data(), len);
+        if (in.fail())
+            throw std::runtime_error("binary reading error.");
     }
     in.read(reinterpret_cast<char*>(m.data.data()), m.n_rows*m.n_cols*sizeof(double));
     if (in.fail()) throw std::runtime_error("binary reading error.");
 
-    for (std::size_t n : m.cols_per_feature)
-    {
-
-    }
+    return m;
 }
 
 void Dataset::print_info() const
@@ -424,37 +418,28 @@ void Dataset::print_stat_by_i(int i) const
     }
 }
 
-void Dataset::save_binary(const std::string& path)
+void Dataset::save_binary_matrix(const std::string& path)
 {
     fill_missing();
     scale_nums();
     std::vector<EncodedColumn> data = std::move(one_hot());
     Matrix m = build_matrix(data, records);
 
-    int n = 0;
-    for (std::size_t i : m.cols_per_feature) n += i;
-    if (n != m.n_cols) throw std::runtime_error("bad matrix.");
-
-    std::ofstream out(path, std::ios::out | std::ios::binary);
+    std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out) throw std::runtime_error("Output file not found.");
 
-    std::size_t rows = m.n_rows, cols = m.n_cols, feats = m.cols_per_feature.size();
+    std::size_t rows = m.n_rows, cols = m.n_cols;
     out.write(reinterpret_cast<const char*>(&rows), sizeof(std::size_t));               //rows
     out.write(reinterpret_cast<const char*>(&cols), sizeof(std::size_t));               //cols
-    out.write(reinterpret_cast<const char*>(&feats), sizeof(std::size_t));              //features
-    std::size_t k = 0;
-    for (std::size_t i : m.cols_per_feature)
+    for(auto& name : m.cols)
     {
-        out.write(reinterpret_cast<const char*>(&i), sizeof(std::size_t));              //cols per feature
-        for(std::size_t j = 0; j < i; ++j, ++k)
-        {
-            std::size_t len = m.cols[k].size();
-            out.write(reinterpret_cast<const char*>(&len), sizeof(std::size_t));        //column name length
-            out.write(m.cols[k].data(), len);                                           //column name
-        }
+        std::size_t len = name.length();
+        out.write(reinterpret_cast<const char*>(&len), sizeof(std::size_t));            //column name length
+        out.write(name.data(), len);                                                    //column name
     }
     out.write(reinterpret_cast<const char*>(m.data.data()),                             //data
         m.data.size() * sizeof(double));
+    if (out.fail()) throw std::runtime_error("binary output error.");
 }
 
 const Column& Dataset::operator[](const std::string& s) const

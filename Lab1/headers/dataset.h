@@ -14,11 +14,6 @@ const int NUMERIC_HISTOGRAM_INTERVALS = 8;
 const int MAX_HISTOGRAM_LINE = 50;
 const std::string FILLED_MISSING_VALUE = "__MISSING__";
 
-enum class LoadType
-{
-    CSV,
-    binary
-};
 struct NumStat
 {
     double min;
@@ -55,8 +50,10 @@ struct Matrix
     std::size_t n_rows;
     std::size_t n_cols;
     std::vector<std::string> cols;
-c    std::vector<double> data;
+    std::vector<double> data;
 };
+Matrix load_binary_matrix(const std::string& path);
+
 
 class Dataset
 {
@@ -68,21 +65,20 @@ private:
 
     Matrix build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows);
     void calculate_stats();
-    void fill_missing();
     void scale_nums();
     std::vector<EncodedColumn> one_hot() const;
 
 public:
     Dataset();
-    Dataset(const std::string& path, LoadType t);
+    Dataset(const std::string& path);
     void load_csv(const std::string& path);
-    void load_binary(const std::string& path);
     const Column& operator[](const std::string& s) const;
     const Column& operator[](int i) const;
     void print_info() const;
     void print_stat_by_i(int i) const;
+    void fill_missing();
     inline int size() const { return  columns.size(); }
-    void save_binary(const std::string& path);
+    void save_binary_matrix(const std::string& path);
 
 private:
     struct ColumnInfo
