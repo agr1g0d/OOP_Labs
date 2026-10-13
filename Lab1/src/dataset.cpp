@@ -280,7 +280,7 @@ void Dataset::calculate_stats()
         int missing = stats[i].missing;
         if (std::holds_alternative<NumericColumn>(col))
         {
-            auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
+            auto& [min, max, mean, var, stand, q] = std::get<NumStat>(stats[i].stat);
             std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
             std::sort(vals.begin(), vals.end(),
                 [](const std::optional<double>& left,
@@ -291,7 +291,7 @@ void Dataset::calculate_stats()
             min = vals[missing].value();
             max = vals.back().value();
     
-            mean = var = 0;
+            mean = var = stand = 0;
             for (auto& j : vals) mean += j.value_or(0);
             mean /= (records - missing);
     
@@ -299,6 +299,7 @@ void Dataset::calculate_stats()
                 if (j.has_value())
                     var += std::pow(j.value() - mean, 2);
             var /= (records - missing - 1);
+            stand = std::pow(var, 0.5);
     
             double p[5] = {0.05, 0.25, 0.5, 0.75, 0.95};
             for (int j = 0; j < 5; ++j)
@@ -337,7 +338,7 @@ void Dataset::print_stat_by_i(int i) const
     int missing = stats[i].missing;
     if (std::holds_alternative<NumericColumn>(col))
     {
-        const auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
+        const auto& [min, max, mean, var, stand, q] = std::get<NumStat>(stats[i].stat);
         std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
         std::sort(vals.begin(), vals.end(),
                 [](const std::optional<double>& left,
@@ -473,13 +474,26 @@ void Dataset::fill_missing()
 
 void Dataset::scale_nums()
 {
+    using SS = ScaleStrategy;
     for (int i = 0; i < stats.size(); ++i)
     {
         if (std::holds_alternative<CategirialColumn>(columns[features_sorted[i]])) continue;
         auto& col = std::get<NumericColumn>(columns[features_sorted[i]]).values;
         auto& stat = std::get<NumStat>(stats[i].stat);
         for (auto& v : col)
-            v = (v.value() - stat.min) / (stat.max - stat.min);
+            switch(SCALE_STRATEGY)
+            {
+                case SS::min_max:
+                    v = (v.value() - stat.min) / (stat.max - stat.min);
+                    break;
+                case SS::standartisation:
+                    v = (v.value() - stat.mean) / stat.stand;
+                    break;
+                case SS::robust_scaling:
+
+                    break;
+                default: throw std::runtime_error("unknown scale strategy.");
+            }
     }
 }
 
