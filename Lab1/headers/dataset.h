@@ -78,6 +78,7 @@ private:
     void calculate_stats();
     void scale_nums();
     std::vector<EncodedColumn> one_hot() const;
+    std::vector<EncodedColumn> ordinal() const;
 
 public:
     Dataset();
