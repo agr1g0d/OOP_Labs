@@ -280,7 +280,7 @@ void Dataset::calculate_stats()
         int missing = stats[i].missing;
         if (std::holds_alternative<NumericColumn>(col))
         {
-            auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
+            auto& [min, max, mean, var, stand, q] = std::get<NumStat>(stats[i].stat);
             std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
             std::sort(vals.begin(), vals.end(),
                 [](const std::optional<double>& left,
@@ -291,7 +291,7 @@ void Dataset::calculate_stats()
             min = vals[missing].value();
             max = vals.back().value();
     
-            mean = var = 0;
+            mean = var = stand = 0;
             for (auto& j : vals) mean += j.value_or(0);
             mean /= (records - missing);
     
@@ -299,6 +299,7 @@ void Dataset::calculate_stats()
                 if (j.has_value())
                     var += std::pow(j.value() - mean, 2);
             var /= (records - missing - 1);
+            stand = std::pow(var, 0.5);
     
             double p[5] = {0.05, 0.25, 0.5, 0.75, 0.95};
             for (int j = 0; j < 5; ++j)
@@ -337,7 +338,7 @@ void Dataset::print_stat_by_i(int i) const
     int missing = stats[i].missing;
     if (std::holds_alternative<NumericColumn>(col))
     {
-        const auto& [min, max, mean, var, q] = std::get<NumStat>(stats[i].stat);
+        const auto& [min, max, mean, var, stand, q] = std::get<NumStat>(stats[i].stat);
         std::vector<std::optional<double>> vals = std::get<NumericColumn>(col).values;
         std::sort(vals.begin(), vals.end(),
                 [](const std::optional<double>& left,
@@ -420,9 +421,17 @@ void Dataset::print_stat_by_i(int i) const
 
 void Dataset::save_binary_matrix(const std::string& path)
 {
+    using ES = EncodeStrategy;
     fill_missing();
     scale_nums();
-    std::vector<EncodedColumn> data = std::move(one_hot());
+    std::vector<EncodedColumn> (Dataset::*encode)()const;
+    switch (ENCODE_STRATEGY)
+    {
+        case ES::one_hot: encode = &Dataset::one_hot; break;
+        case ES::ordinal: encode = &Dataset::ordinal; break;
+        default: throw std::runtime_error("invalid encode strategy.");
+    }
+    std::vector<EncodedColumn> data = std::move((this->*encode)());
     Matrix m = build_matrix(data, records);
 
     std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
@@ -456,13 +465,29 @@ const Column& Dataset::operator[](int i) const
 
 void Dataset::fill_missing()
 {
+    using FS = FillStrategy;
+    double miss;
+    
     for (int i = 0; i < stats.size(); ++i)
     {
         if (stats[i].missing == 0) continue;
         if (std::holds_alternative<NumStat>(stats[i].stat))
         {
             for (auto& x : std::get<NumericColumn>(columns[features_sorted[i]]).values)
-                if (!x.has_value()) x = std::get<NumStat>(stats[i].stat).q[2];
+                if (!x.has_value()) 
+                    switch (FILL_STRATEGY)
+                    {
+                        case FS::mean:
+                            x = std::get<NumStat>(stats[i].stat).mean;
+                            break;
+                        case FS::median:
+                            x = std::get<NumStat>(stats[i].stat).q[2];
+                            break;
+                        case FS::zero:
+                            x = 0.0;
+                            break;
+                        default: throw std::runtime_error("unknown fill strategy\n");
+                    }
         } else
         {
             for (auto& x : std::get<CategirialColumn>(columns[features_sorted[i]]).values)
@@ -473,13 +498,26 @@ void Dataset::fill_missing()
 
 void Dataset::scale_nums()
 {
+    using SS = ScaleStrategy;
     for (int i = 0; i < stats.size(); ++i)
     {
         if (std::holds_alternative<CategirialColumn>(columns[features_sorted[i]])) continue;
         auto& col = std::get<NumericColumn>(columns[features_sorted[i]]).values;
         auto& stat = std::get<NumStat>(stats[i].stat);
         for (auto& v : col)
-            v = (v.value() - stat.min) / (stat.max - stat.min);
+            switch(SCALE_STRATEGY)
+            {
+                case SS::min_max:
+                    v = (v.value() - stat.min) / (stat.max - stat.min);
+                    break;
+                case SS::standartisation:
+                    v = (v.value() - stat.mean) / stat.stand;
+                    break;
+                case SS::robust_scaling:
+                    v = (v.value() - stat.q[2]) / (stat.q[3] - stat.q[1]);
+                    break;
+                default: throw std::runtime_error("unknown scale strategy.");
+            }
     }
 }
 
@@ -510,6 +548,37 @@ std::vector<EncodedColumn> Dataset::one_hot() const
     }
     return result;
 }
+
+std::vector<EncodedColumn> Dataset::ordinal() const
+{
+    std::vector<EncodedColumn> result;
+    for (int i = 0; i < stats.size(); ++i)
+    {
+        const auto& col = operator[](i);
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            EncodedColumn ecol = {features_sorted[i], {}};
+            for (const auto& v : std::get<NumericColumn>(col).values)
+                ecol.values.push_back(v.value());
+            result.push_back(std::move(ecol));
+        } else
+        {
+            auto cats = std::get<CatStat>(stats[i].stat).categories;
+            EncodedColumn ecol = {features_sorted[i], {}};
+            if (stats[i].missing) cats.push_back({FILLED_MISSING_VALUE, stats[i].missing});
+            for (const auto& v : std::get<CategirialColumn>(col).values)
+                for (int j = 0; j < cats.size(); ++j)
+                {
+                    const std::string& cat = cats[j].first; 
+                    if (cat == v.value())
+                        ecol.values.push_back(j);
+                }
+            result.push_back(ecol);
+        }
+    }
+    return result;
+}
+
 
 Matrix Dataset::build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows)
 {
