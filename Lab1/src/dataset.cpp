@@ -20,11 +20,14 @@ inline void pop_r(std::string& s)
         s.pop_back();
 }
 
-Dataset::Dataset() {}
-
-Dataset::Dataset(const std::string& path)
+Dataset::Dataset(const std::string& path, 
+    const std::string& target_feature)
+        : target_feature(target_feature)
 {
     load_csv(path);
+    for (const std::string& s : features_sorted)
+        if (s == target_feature) return;
+    throw std::invalid_argument("dataset has no given target feature.");
 }
 
 void Dataset::load_csv(const std::string& path)
@@ -471,6 +474,7 @@ void Dataset::fill_missing()
     for (int i = 0; i < stats.size(); ++i)
     {
         if (stats[i].missing == 0) continue;
+        if (features_sorted[i] == target_feature) continue;
         if (std::holds_alternative<NumStat>(stats[i].stat))
         {
             for (auto& x : std::get<NumericColumn>(columns[features_sorted[i]]).values)
@@ -502,6 +506,7 @@ void Dataset::scale_nums()
     for (int i = 0; i < stats.size(); ++i)
     {
         if (std::holds_alternative<CategirialColumn>(columns[features_sorted[i]])) continue;
+        if (features_sorted[i] == target_feature) continue;
         auto& col = std::get<NumericColumn>(columns[features_sorted[i]]).values;
         auto& stat = std::get<NumStat>(stats[i].stat);
         for (auto& v : col)
@@ -526,6 +531,7 @@ std::vector<EncodedColumn> Dataset::one_hot() const
     std::vector<EncodedColumn> result;
     for (int i = 0; i < stats.size(); ++i)
     {
+        if (features_sorted[i] == target_feature) continue;
         const auto& col = operator[](i);
         if (std::holds_alternative<NumericColumn>(col))
         {
@@ -554,6 +560,7 @@ std::vector<EncodedColumn> Dataset::ordinal() const
     std::vector<EncodedColumn> result;
     for (int i = 0; i < stats.size(); ++i)
     {
+        if (features_sorted[i] == target_feature) continue;
         const auto& col = operator[](i);
         if (std::holds_alternative<NumericColumn>(col))
         {
@@ -578,7 +585,6 @@ std::vector<EncodedColumn> Dataset::ordinal() const
     }
     return result;
 }
-
 
 Matrix Dataset::build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows)
 {

@@ -14,12 +14,12 @@ const int _UNIQUE = 2;
 const double EPS = 1e-9;
 const std::string FILLED_MISSING_VALUE = "__MISSING__";
 const int MAX_HISTOGRAM_LINE = 50;
-inline int NUMERIC_HISTOGRAM_INTERVALS = 10;
 
 enum class FillStrategy { median, mean, zero }; 
 enum class ScaleStrategy { min_max, standartisation, robust_scaling };
 enum class EncodeStrategy { one_hot, ordinal };
 
+inline int NUMERIC_HISTOGRAM_INTERVALS = 10;
 inline FillStrategy FILL_STRATEGY;
 inline ScaleStrategy SCALE_STRATEGY;
 inline EncodeStrategy ENCODE_STRATEGY;
@@ -73,6 +73,8 @@ private:
     std::vector<std::string> features_sorted;
     std::vector<Stat> stats;
     int records;
+    std::string target_feature;
+
 
     Matrix build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows);
     void calculate_stats();
@@ -81,8 +83,8 @@ private:
     std::vector<EncodedColumn> ordinal() const;
 
 public:
-    Dataset();
-    Dataset(const std::string& path);
+    Dataset(const std::string& path, 
+        const std::string& target_feature = "Class/ASD");
     void load_csv(const std::string& path);
     const Column& operator[](const std::string& s) const;
     const Column& operator[](int i) const;
