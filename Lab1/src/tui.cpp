@@ -60,6 +60,19 @@ void preprocess_and_write(ds::Dataset& dataset)
     std::cout << "Binary: " << bin.tellg() << " bytes\n";
 }
 
+
+int check_col_intervals(int val)
+{
+    if (val <= 0)
+        throw std::invalid_argument("Invalid histogram interval argement.\n");
+    return val;
+}
+double check_train_part(double val)
+{
+    if (val < 0 || val > 1)
+        throw std::invalid_argument("Invalid train part argement.\n");
+    return val;
+}
 ds::FillStrategy parse_fill(std::string s)
 {
     static const std::unordered_map<std::string, ds::FillStrategy> m = 
@@ -69,7 +82,7 @@ ds::FillStrategy parse_fill(std::string s)
         {"zero", ds::FillStrategy::zero}
     };
     auto it = m.find(s);
-    if (it == m.end()) throw std::runtime_error("Unknown missings fill strategy type.\n");
+    if (it == m.end()) throw std::invalid_argument("Unknown missings fill strategy type.\n");
     return it->second;
 }
 ds::ScaleStrategy parse_scale(std::string s)
@@ -81,7 +94,7 @@ ds::ScaleStrategy parse_scale(std::string s)
         {"robust_scaling", ds::ScaleStrategy::robust_scaling}
     };
     auto it = m.find(s);
-    if (it == m.end()) throw std::runtime_error("Unknown numeric scaling strategy type.\n");
+    if (it == m.end()) throw std::invalid_argument("Unknown numeric scaling strategy type.\n");
     return it->second;
 }
 ds::EncodeStrategy parse_encoding(std::string s)
@@ -92,7 +105,7 @@ ds::EncodeStrategy parse_encoding(std::string s)
         {"ordinal", ds::EncodeStrategy::ordinal}
     };
     auto it = m.find(s);
-    if (it == m.end()) throw std::runtime_error("Unknown numeric scaling strategy type.\n");
+    if (it == m.end()) throw std::invalid_argument("Unknown numeric scaling strategy type.\n");
     return it->second;
 }
 
@@ -112,22 +125,25 @@ int main(int argc, char* argv[])
             ->default_value("min-max"))
         ("e,encode_categoric","The way categorial features will encode (one-hot/ordinal).",cxxopts::value<std::string>()
             ->default_value("one-hot"))
+        ("t,train_part","The part of dataset thar will be used to train model. The value is in [0,1].",cxxopts::value<double>()
+            ->default_value("0.8"))
         ("h,help","Print availible comands");
     
     auto parsed = opts.parse(argc, argv);
     if (parsed.count("h"))
     {
         std::cout << opts.help() << "\n";
-        return 1;
+        return 0;
     }
-    fs::CSV_PATH = parsed["p"].as<std::string>();
-    fs::BIN_PATH = parsed["s"].as<std::string>();
-    ds::NUMERIC_HISTOGRAM_INTERVALS = parsed["i"].as<int>();
     try {
+        fs::CSV_PATH = parsed["p"].as<std::string>();
+        fs::BIN_PATH = parsed["s"].as<std::string>();
+        ds::NUMERIC_HISTOGRAM_INTERVALS = check_col_intervals(parsed["i"].as<int>());
+        ds::TRAIN_PART = check_train_part(parsed["t"].as<double>());
         ds::FILL_STRATEGY = parse_fill(parsed["f"].as<std::string>());
         ds::SCALE_STRATEGY = parse_scale(parsed["c"].as<std::string>());
         ds::ENCODE_STRATEGY = parse_encoding(parsed["e"].as<std::string>());
-    } catch (const std::runtime_error& exc)
+    } catch (const std::invalid_argument& exc)
     {
         std::cerr  << exc.what() << "\n";
         return 1;

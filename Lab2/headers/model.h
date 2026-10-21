@@ -1,11 +1,8 @@
-#pragma once
-
 #include "dataset.h"
+#include "exc.h"
 
-
-namespace mod
+namespace model
 {
-
 
 
 

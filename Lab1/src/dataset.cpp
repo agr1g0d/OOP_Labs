@@ -195,39 +195,6 @@ void Dataset::load_csv(const std::string& path)
     calculate_stats();
 }
 
-Matrix load_binary_matrix(const std::string& path)
-{
-    std::ifstream in(path, std::ios::in | std::ios::binary);
-    if (!in) throw std::runtime_error("binary input file not found.");
-
-    Matrix m;
-
-    in.read(reinterpret_cast<char*>(&m.n_rows), sizeof(std::size_t));
-    in.read(reinterpret_cast<char*>(&m.n_cols), sizeof(std::size_t));
-    if (in.fail())
-        throw std::runtime_error("binary reading error.");
-    if (m.n_cols != 0 &&
-        m.n_rows > std::numeric_limits<std::size_t>::max() / m.n_cols)
-        throw std::runtime_error("binary matrix dimensions are too large.");
-    m.cols.resize(m.n_cols);
-    m.data.resize(m.n_rows * m.n_cols);
-    for (auto& name : m.cols)
-    {
-        std::size_t len;
-        in.read(reinterpret_cast<char*>(&len), sizeof(std::size_t));
-        if (in.fail())
-            throw std::runtime_error("binary reading error.");
-        name.resize(len);
-        in.read(name.data(), len);
-        if (in.fail())
-            throw std::runtime_error("binary reading error.");
-    }
-    in.read(reinterpret_cast<char*>(m.data.data()), m.n_rows*m.n_cols*sizeof(double));
-    if (in.fail()) throw std::runtime_error("binary reading error.");
-
-    return m;
-}
-
 void Dataset::print_info() const
 {
     std::vector<std::pair<std::string, const Column*>> ordered_columns;
@@ -586,18 +553,5 @@ std::vector<EncodedColumn> Dataset::ordinal() const
     return result;
 }
 
-Matrix Dataset::build_matrix(std::vector<EncodedColumn> encoded_data, std::size_t rows)
-{
-    Matrix m = {rows, encoded_data.size(), 
-        std::vector<std::string>(encoded_data.size()), 
-        std::vector<double>(encoded_data.size() * rows)};
-    for (int j = 0; j < m.n_cols; ++j)
-    {
-        m.cols[j] = encoded_data[j].name;
-        for (int i = 0; i < rows; ++i)
-            m.data[i*m.n_cols + j] = encoded_data[j].values[i];
-    }
-    return m;
-}
 
 }

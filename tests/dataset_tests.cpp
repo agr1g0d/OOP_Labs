@@ -1,4 +1,5 @@
 #include "dataset.h"
+#include "matrix.h"
 
 #include <cmath>
 #include <cstring>

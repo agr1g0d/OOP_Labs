@@ -42,9 +42,11 @@ enable_testing()
 add_executable(dataset_tests
     tests/dataset_tests.cpp
     Lab1/src/dataset.cpp
+    Lab1/src/matrix.cpp
 )
 target_include_directories(dataset_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Lab1/headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab2/headers"
 )
 
 add_test(
