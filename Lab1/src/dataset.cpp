@@ -191,8 +191,6 @@ void Dataset::load_csv(const std::string& path)
         else
             stats.emplace_back(header[i].missing, CatStat());
     }
-
-    calculate_stats();
 }
 
 void Dataset::print_info() const
@@ -242,7 +240,7 @@ void Dataset::print_info() const
               << " in " << columns_with_missing << " features\n";
 }
 
-void Dataset::calculate_stats()
+void Dataset::fit()
 {
     for (int i = 0; i < columns.size(); ++i)
     {
@@ -389,7 +387,7 @@ void Dataset::print_stat_by_i(int i) const
     }
 }
 
-void Dataset::save_binary_matrix(const std::string& path)
+std::vector<EncodedColumn> Dataset::transform()
 {
     using ES = EncodeStrategy;
     fill_missing();
@@ -401,8 +399,13 @@ void Dataset::save_binary_matrix(const std::string& path)
         case ES::ordinal: encode = &Dataset::ordinal; break;
         default: throw std::runtime_error("invalid encode strategy.");
     }
-    std::vector<EncodedColumn> data = std::move((this->*encode)());
-    Matrix m = build_matrix(data, records);
+    return (this->*encode)();
+}
+
+void Dataset::save_binary_matrix(const std::string& path)
+{
+    
+    Matrix m = build_matrix(transform(), records);
 
     std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
     if (!out) throw std::runtime_error("Output file not found.");
@@ -551,6 +554,26 @@ std::vector<EncodedColumn> Dataset::ordinal() const
         }
     }
     return result;
+}
+
+std::pair<Dataset, Dataset> Dataset::train_test_split(double train_part) const
+{
+    if (train_part > 1 || train_part <= 0)
+        throw std::invalid_argument("invalid train part argument.");
+    std::size_t train = records * train_part;
+    std::unordered_map<std::string, Column> train_data;
+    std::unordered_map<std::string, Column> test_data;
+    for (const auto& [name, col] : columns)
+    {
+        Column fresh = std::holds_alternative<NumericColumn>(col) ? 
+            NumericColumn() : CategirialColumn(); 
+        train_data[name] = test_data[name] = 
+    }
+}
+
+Dataset::Dataset(const std::unordered_map<std::string, Column> data)
+{
+
 }
 
 

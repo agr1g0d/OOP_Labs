@@ -20,23 +20,29 @@ private:
     int records;
     std::string target_feature;
 
+    Dataset(const std::unordered_map<std::string, Column> data);
 
-    void calculate_stats();
+    void fit();
     void scale_nums();
+    void fill_missing();
     std::vector<EncodedColumn> one_hot() const;
     std::vector<EncodedColumn> ordinal() const;
 
 public:
     Dataset(const std::string& path, 
         const std::string& target_feature = "Class/ASD");
-    void load_csv(const std::string& path);
+        void load_csv(const std::string& path);
+
     const Column& operator[](const std::string& s) const;
     const Column& operator[](int i) const;
+    inline int size() const { return  columns.size(); }
+
     void print_info() const;
     void print_stat_by_i(int i) const;
-    void fill_missing();
-    inline int size() const { return  columns.size(); }
+
+    std::vector<EncodedColumn> transform();
     void save_binary_matrix(const std::string& path);
+    std::pair<Dataset, Dataset> train_test_split(double train_part) const;
 
 private:
     struct ColumnInfo
