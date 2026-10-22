@@ -179,12 +179,12 @@ void Dataset::load_csv(const std::string& path)
         if (records != prev_records) throw std::runtime_error("columns have different sizes\n");
         prev_records = records;
     }
-    features_sorted.reserve(features);
-    std::sort(header.begin(), header.end(), [](const auto& left, const auto& right)
-        { return left.name < right.name; });
+    for (auto [name, col] : columns)
+        features_sorted.emplace_back(name);
+    std::sort(features_sorted.begin(), features_sorted.end());
+    
     for (int i = 0; i < features; ++i)
     {
-        features_sorted.emplace_back(header[i].name);
         bool numeric = header[i].is_num && header[i].unique > _UNIQUE;
         if (numeric)
             stats.emplace_back(header[i].missing, NumStat());
@@ -563,17 +563,66 @@ std::pair<Dataset, Dataset> Dataset::train_test_split(double train_part) const
     std::size_t train = records * train_part;
     std::unordered_map<std::string, Column> train_data;
     std::unordered_map<std::string, Column> test_data;
+    train_data.reserve(size());
+    test_data.reserve(size());
     for (const auto& [name, col] : columns)
     {
-        Column fresh = std::holds_alternative<NumericColumn>(col) ? 
-            NumericColumn() : CategirialColumn(); 
-        train_data[name] = test_data[name] = 
+        if (std::holds_alternative<NumericColumn>(col))
+        {
+            train_data[name] = test_data[name] = NumericColumn();
+            std::get<NumericColumn>(train_data[name]).values.reserve(train);
+            std::get<NumericColumn>(test_data[name]).values.reserve(records - train);
+        } else
+        {
+            train_data[name] = test_data[name] = CategirialColumn();
+            std::get<CategirialColumn>(train_data[name]).values.reserve(train);
+            std::get<CategirialColumn>(test_data[name]).values.reserve(records - train);
+        }
+        
     }
+    for (std::size_t i = 0; i < train; ++i)
+        for (auto [name, col] : columns)
+            if (std::holds_alternative<NumericColumn>(col))
+                 std::get<NumericColumn>(train_data[name]).values[i]
+                     = std::get<NumericColumn>(col).values[i];
+            else
+                std::get<CategirialColumn>(train_data[name]).values[i]
+                     = std::get<CategirialColumn>(col).values[i];
+    for (std::size_t i = train; i < records; ++i)
+        for (auto [name, col] : columns)
+            if (std::holds_alternative<NumericColumn>(col))
+                 std::get<NumericColumn>(test_data[name]).values[i]
+                     = std::get<NumericColumn>(col).values[i];
+            else
+                std::get<CategirialColumn>(test_data[name]).values[i]
+                     = std::get<CategirialColumn>(col).values[i];
+    return std::make_pair(
+            Dataset(std::move(train_data), target_feature), 
+            Dataset(std::move(test_data), target_feature)
+        );
 }
 
-Dataset::Dataset(const std::unordered_map<std::string, Column> data)
+Dataset::Dataset(std::unordered_map<std::string, Column> data,
+        std::string target_feature)
+    : columns(std::move(data)), target_feature(target_feature)
 {
+    if (std::holds_alternative<NumericColumn>(columns.begin()->second))
+        records = std::get<NumericColumn>(columns.begin()->second).values.size();
+    else
+        records = std::get<CategirialColumn>(columns.begin()->second).values.size();
+    features_sorted.reserve(size());
+    stats.reserve(size());
+    for (auto [name, col] : columns)
+        features_sorted.emplace_back(name);
+    std::sort(features_sorted.begin(), features_sorted.end());
 
+    for (const std::string& name : features_sorted)
+    {
+        if (std::holds_alternative<NumericColumn>(columns[name]))
+            stats.emplace_back(0,NumStat());
+        else
+            stats.emplace_back(0,CatStat());
+    }
 }
 
 

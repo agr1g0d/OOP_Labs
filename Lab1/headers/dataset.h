@@ -20,7 +20,8 @@ private:
     int records;
     std::string target_feature;
 
-    Dataset(const std::unordered_map<std::string, Column> data);
+    Dataset(std::unordered_map<std::string, Column> data, 
+        std::string target_feature);
 
     void fit();
     void scale_nums();
