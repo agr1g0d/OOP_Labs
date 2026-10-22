@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 #include <variant>
 #include <vector>
@@ -10,9 +12,17 @@ const char SPLIT = ',';
 const std::string MISSING_VALUE = "?";
 const int _UNIQUE = 2;
 const double EPS = 1e-9;
-const int NUMERIC_HISTOGRAM_INTERVALS = 8;
-const int MAX_HISTOGRAM_LINE = 50;
 const std::string FILLED_MISSING_VALUE = "__MISSING__";
+const int MAX_HISTOGRAM_LINE = 50;
+inline int NUMERIC_HISTOGRAM_INTERVALS = 10;
+
+enum class FillStrategy { median, mean, zero }; 
+enum class ScaleStrategy { min_max, standartisation, robust_scaling };
+enum class EncodeStrategy { one_hot, ordinal };
+
+inline FillStrategy FILL_STRATEGY;
+inline ScaleStrategy SCALE_STRATEGY;
+inline EncodeStrategy ENCODE_STRATEGY;
 
 struct NumStat
 {
@@ -20,6 +30,7 @@ struct NumStat
     double max;
     double mean;
     double var;
+    double stand;
     double q[5];
 };
 struct CatStat
@@ -67,6 +78,7 @@ private:
     void calculate_stats();
     void scale_nums();
     std::vector<EncodedColumn> one_hot() const;
+    std::vector<EncodedColumn> ordinal() const;
 
 public:
     Dataset();
