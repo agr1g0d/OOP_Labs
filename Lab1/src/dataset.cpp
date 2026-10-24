@@ -179,17 +179,20 @@ void Dataset::load_csv(const std::string& path)
         if (records != prev_records) throw std::runtime_error("columns have different sizes\n");
         prev_records = records;
     }
-    for (auto [name, col] : columns)
-        features_sorted.emplace_back(name);
-    std::sort(features_sorted.begin(), features_sorted.end());
+
+    std::sort(header.begin(), header.end(), 
+        [](const ColumnInfo& left, const ColumnInfo& right)
+        { return left.name < right.name; });
     
-    for (int i = 0; i < features; ++i)
+    
+    for (const auto& f : header)
     {
-        bool numeric = header[i].is_num && header[i].unique > _UNIQUE;
+        bool numeric = f.is_num && f.unique > _UNIQUE;
         if (numeric)
-            stats.emplace_back(header[i].missing, NumStat());
+            stats.emplace_back(f.missing, NumStat());
         else
-            stats.emplace_back(header[i].missing, CatStat());
+            stats.emplace_back(f.missing, CatStat());
+        features_sorted.emplace_back(f.name);
     }
 }
 
@@ -298,6 +301,12 @@ void Dataset::fit()
             }
         }
     }
+}
+
+void Dataset::fit_another(const Dataset& other)
+{
+    for (std::size_t i = 0; i < stats.size(); ++i)
+        stats[i].stat = other.stats[i].stat;
 }
 
 void Dataset::print_stat_by_i(int i) const
@@ -565,6 +574,7 @@ std::pair<Dataset, Dataset> Dataset::train_test_split(double train_part) const
     std::unordered_map<std::string, Column> test_data;
     train_data.reserve(size());
     test_data.reserve(size());
+
     for (const auto& [name, col] : columns)
     {
         if (std::holds_alternative<NumericColumn>(col))
@@ -583,19 +593,19 @@ std::pair<Dataset, Dataset> Dataset::train_test_split(double train_part) const
     for (std::size_t i = 0; i < train; ++i)
         for (auto [name, col] : columns)
             if (std::holds_alternative<NumericColumn>(col))
-                 std::get<NumericColumn>(train_data[name]).values[i]
-                     = std::get<NumericColumn>(col).values[i];
+                 std::get<NumericColumn>(train_data[name]).values
+                    .emplace_back(std::get<NumericColumn>(col).values[i]);
             else
-                std::get<CategirialColumn>(train_data[name]).values[i]
-                     = std::get<CategirialColumn>(col).values[i];
+                std::get<CategirialColumn>(train_data[name]).values
+                    .emplace_back(std::get<CategirialColumn>(col).values[i]);
     for (std::size_t i = train; i < records; ++i)
         for (auto [name, col] : columns)
             if (std::holds_alternative<NumericColumn>(col))
-                 std::get<NumericColumn>(test_data[name]).values[i]
-                     = std::get<NumericColumn>(col).values[i];
+                 std::get<NumericColumn>(test_data[name]).values
+                    .emplace_back(std::get<NumericColumn>(col).values[i]);
             else
-                std::get<CategirialColumn>(test_data[name]).values[i]
-                     = std::get<CategirialColumn>(col).values[i];
+                std::get<CategirialColumn>(test_data[name]).values
+                    .emplace_back(std::get<CategirialColumn>(col).values[i]);
     return std::make_pair(
             Dataset(std::move(train_data), target_feature), 
             Dataset(std::move(test_data), target_feature)
@@ -619,10 +629,24 @@ Dataset::Dataset(std::unordered_map<std::string, Column> data,
     for (const std::string& name : features_sorted)
     {
         if (std::holds_alternative<NumericColumn>(columns[name]))
+        {
             stats.emplace_back(0,NumStat());
+            const auto& values = std::get<NumericColumn>(columns[name]).values;
+            for (const auto& v : values)
+                if (!v.has_value())
+                    ++stats.back().missing;
+        }
         else
+        {
             stats.emplace_back(0,CatStat());
+            const auto& values = std::get<CategirialColumn>(columns[name]).values;
+            for (const auto& v : values)
+                if (!v.has_value())
+                    ++stats.back().missing;
+        }
     }
+
+    
 }
 
 

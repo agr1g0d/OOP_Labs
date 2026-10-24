@@ -23,7 +23,6 @@ private:
     Dataset(std::unordered_map<std::string, Column> data, 
         std::string target_feature);
 
-    void fit();
     void scale_nums();
     void fill_missing();
     std::vector<EncodedColumn> one_hot() const;
@@ -41,6 +40,8 @@ public:
     void print_info() const;
     void print_stat_by_i(int i) const;
 
+    void fit();
+    void fit_another(const Dataset& other);
     std::vector<EncodedColumn> transform();
     void save_binary_matrix(const std::string& path);
     std::pair<Dataset, Dataset> train_test_split(double train_part) const;

@@ -124,6 +124,7 @@ void test_invalid_paths(const fs::path& csv_path)
         "CSV with uneven columns must be rejected");
 
     ds::Dataset dataset(csv_path);
+    dataset.fit();
     check_throws<std::out_of_range>(
         [&] { (void)dataset["not a feature"]; },
         "unknown feature name must be rejected");
@@ -147,6 +148,7 @@ void test_invalid_paths(const fs::path& csv_path)
 void test_binary_round_trip(const fs::path& csv_path)
 {
     ds::Dataset dataset(csv_path);
+    dataset.fit();
     TemporaryFile binary(".bin");
     dataset.save_binary_matrix(binary.get());
 
