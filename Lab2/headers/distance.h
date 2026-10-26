@@ -3,6 +3,12 @@
 namespace model
 {
 
+enum class WeightingType
+{
+    equal,
+    reverse
+};
+
 class IDistance
 {
 public:
