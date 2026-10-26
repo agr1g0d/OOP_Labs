@@ -151,6 +151,8 @@ int main(int argc, char* argv[])
 
     try {
         ds::Dataset dataset(fs::CSV_PATH);
+        dataset.fit();
+        
         bool running = true;
 
         while (running)

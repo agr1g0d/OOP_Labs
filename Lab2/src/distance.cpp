@@ -40,6 +40,7 @@ double ManhattanDistance::compute(
     double dist = 0;
     for (int i = 0; i < a.size(); ++i)
         dist += abs(a[i] - b[i]);
+    return dist;
 }
 
 double ChebyshevDistance::compute(

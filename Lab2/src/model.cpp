@@ -18,6 +18,7 @@ void Knn::fit(
         std::span<const double> target
     )
 {
+    // todo: прочитать про расрутку стека
     if (features.n_rows == 0)
         throw exc::empty_train_sample("Train sample is empty.");
     if (k > features.n_rows)
@@ -170,9 +171,9 @@ std::vector<double> KnnClassifier::predict(
         if (voting.empty()) throw std::runtime_error("voting system is broken.");
         double winner = 0.0;
         for (auto [cat, vote] : voting)
-            if
-
-        answers.push_back(result);
+            if (vote > voting[winner])
+                winner = cat;
+        answers.push_back(winner);
     }
 
     return answers;
