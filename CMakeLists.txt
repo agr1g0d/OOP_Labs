@@ -53,3 +53,19 @@ add_test(
     NAME dataset_tests
     COMMAND dataset_tests "${CMAKE_CURRENT_SOURCE_DIR}/data/Autism-Adult-Data.csv"
 )
+
+add_executable(lab2_tests
+    tests/lab2_tests.cpp
+    Lab1/src/matrix.cpp
+    Lab2/src/distance.cpp
+    Lab2/src/model.cpp
+)
+target_include_directories(lab2_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab1/headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab2/headers"
+)
+
+add_test(
+    NAME lab2_tests
+    COMMAND lab2_tests
+)
