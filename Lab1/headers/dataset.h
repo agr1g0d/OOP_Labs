@@ -36,6 +36,8 @@ public:
     const Column& operator[](const std::string& s) const;
     const Column& operator[](int i) const;
     inline int size() const { return  columns.size(); }
+    inline const Column& get_target() const
+    { return operator[](target_feature); }
 
     void print_info() const;
     void print_stat_by_i(int i) const;

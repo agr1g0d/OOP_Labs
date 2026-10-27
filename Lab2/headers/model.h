@@ -4,6 +4,12 @@
 namespace model
 {
 
+
+
+inline int K;
+inline WeightingType WEIGHTING;
+inline DistanceType DISTANCE;
+
 class IModel
 {
 public:
@@ -46,6 +52,9 @@ public:
 class KnnClassifier : public Knn
 {
 public:
+    KnnClassifier(std::size_t k, IDistance& dist, WeightingType weighting)
+        : Knn(k, dist, weighting) {}
+
     std::vector<double> predict(
         const ds::Matrix& features
     ) const override;
@@ -54,6 +63,9 @@ public:
 class KnnRegressor : public Knn
 {
 public:
+    KnnRegressor(std::size_t k, IDistance& dist, WeightingType weighting)
+        : Knn(k, dist, weighting) {}
+
     std::vector<double> predict(
         const ds::Matrix& features
     ) const override;

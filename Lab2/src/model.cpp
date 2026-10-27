@@ -52,7 +52,8 @@ std::vector<double> KnnRegressor::predict(
     if (features.n_cols != train_features.n_cols)
         throw exc::invalid_prediction_sample("prediction sample is incompitable with train sample.");
 
-    std::vector<double> answers(features.n_rows);
+    std::vector<double> answers;
+    answers.reserve(features.n_rows);
     for (std::size_t i = 0; i < features.n_rows; ++i)
     {
         std::priority_queue
@@ -87,22 +88,32 @@ std::vector<double> KnnRegressor::predict(
                     neighbours.pop();
                     result += train_target[ind];
                 }
+                result /= k;
                 break;
-            case WeightingType::reverse:
+            case WeightingType::reverse: {
+                double w = 0;
+                bool coincidence = 0;
                 for (std::size_t j = 0; neighbours.size(); ++j)
                 {
                     auto [d, ind] = neighbours.top();
                     if (d)
+                    {
                         result += train_target[ind] / d;
+                        w += 1/d;
+                    }
                     else
-                        result += train_target[ind];
+                    {
+                        result = train_target[ind];
+                        coincidence = 1;
+                        break;
+                    }
                     neighbours.pop();
                 }
+                if(!coincidence) result /= w;
                 break;
-            default:
+            } default:
                 throw std::invalid_argument("unsupported weighting type.");
         }
-        result /= k;
         answers.push_back(result);
     }
 
@@ -118,7 +129,8 @@ std::vector<double> KnnClassifier::predict(
     if (features.n_cols != train_features.n_cols)
         throw exc::invalid_prediction_sample("prediction sample is incompitable with train sample.");
 
-    std::vector<double> answers(features.n_rows);
+    std::vector<double> answers;
+    answers.reserve(features.n_rows);
     for (std::size_t i = 0; i < features.n_rows; ++i)
     {
         std::priority_queue
@@ -144,6 +156,7 @@ std::vector<double> KnnClassifier::predict(
         }
 
         std::unordered_map<double, double> voting; // category-votes
+        double winner;
         switch(weighting)
         {
             case WeightingType::equal:
@@ -154,24 +167,34 @@ std::vector<double> KnnClassifier::predict(
                     neighbours.pop();
                 }
                 break;
-            case WeightingType::reverse:
+            case WeightingType::reverse: {
+                bool coincidence = 0;
                 for (std::size_t j = 0; neighbours.size(); ++j)
                 {
                     auto [d, ind] = neighbours.top();
-                    if (d != 0.0)
-                        voting[train_target[ind]] += 1 / d;
-                    else
+                    if (d == 0.0)
+                    {
+                        if (!coincidence)
+                        {
+                            voting.clear();
+                            coincidence = 1;
+                        }
                         voting[train_target[ind]] += 1;
+                    } else if (!coincidence)
+                        voting[train_target[ind]] += (1 / d);
                     neighbours.pop();
                 }
                 break;
-            default:
+            } default:
                 throw std::invalid_argument("unsupported weighting type.");
         }
         if (voting.empty()) throw std::runtime_error("voting system is broken.");
-        double winner = 0.0;
+        winner = voting.begin()->first;
         for (auto [cat, vote] : voting)
             if (vote > voting[winner])
+                winner = cat;
+        for (auto [cat, vote] : voting)  // if some cat has save votes we choose the one with the least cat code
+            if (vote == voting[winner] && cat < winner)
                 winner = cat;
         answers.push_back(winner);
     }

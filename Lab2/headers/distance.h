@@ -8,6 +8,12 @@ enum class WeightingType
     equal,
     reverse
 };
+enum class DistanceType
+{
+    euclid,
+    manhattan,
+    chebyshev
+};
 
 class IDistance
 {
