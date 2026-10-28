@@ -71,4 +71,34 @@ public:
     ) const override;
 };
 
+enum class SplitCriterion { Variance, Gini };
+
+class DecisionStump : public IModel
+{
+    SplitCriterion criterion;
+    std::size_t min_samples_leaf;
+
+    std::size_t best_j;
+    std::size_t best_t;
+    double left_prefoction;
+    double right_prediction;
+public:
+    DecisionStump(SplitCriterion criterion, 
+        std::size_t min_samples_leaf);
+
+    void fit(
+        const ds::Matrix& features,
+        std::span<const double> target
+    ) override;
+
+    std::vector<double> predict(
+        const ds::Matrix& features
+    ) const override;
+
+    std::size_t split_feature() const;
+
+    double split_threshold() const;
+
+};
+
 }
