@@ -7,6 +7,7 @@ namespace model
 
 
 inline int K;
+inline std::size_t MIN_SAMPLES_LEAF;
 inline WeightingType WEIGHTING;
 inline DistanceType DISTANCE;
 
@@ -73,14 +74,53 @@ public:
 
 enum class SplitCriterion { Variance, Gini };
 
+struct Agregates
+{
+    std::size_t m;
+    std::size_t m_L;
+    std::span<const double> target;
+
+    Agregates(std::span<const double> target);
+    virtual ~Agregates() = default;
+    virtual void reset() = 0;
+    virtual double score() const = 0;
+    virtual void move(std::size_t i) = 0;
+};
+
+struct AgregatesVariance : public Agregates
+{
+    double S;
+    double S_L;
+    AgregatesVariance(std::span<const double> target);
+    virtual void reset() override;
+    virtual double score() const override;
+    virtual void move(std::size_t i) override;
+};
+
+struct AgregatesGini : public Agregates
+{
+    double A;
+    double A_L;
+    std::unordered_map<double, std::size_t> nc;
+    std::unordered_map<double, std::size_t> nc_L;
+    AgregatesGini(std::span<const double> target);
+    virtual void reset() override;
+    virtual double score() const override;
+    virtual void move(std::size_t i) override;
+};
+
 class DecisionStump : public IModel
 {
+protected:
+    ds::Matrix train_features;
+    std::vector<double> train_target;
+
     SplitCriterion criterion;
     std::size_t min_samples_leaf;
 
     std::size_t best_j;
-    std::size_t best_t;
-    double left_prefoction;
+    double best_t;
+    double left_prediction;
     double right_prediction;
 public:
     DecisionStump(SplitCriterion criterion, 
@@ -95,10 +135,12 @@ public:
         const ds::Matrix& features
     ) const override;
 
-    std::size_t split_feature() const;
+    inline std::size_t split_feature() const
+    { return best_j; }
 
-    double split_threshold() const;
-
+    inline double split_threshold() const
+    { return best_t; }
 };
+
 
 }

@@ -13,12 +13,17 @@ struct invalid_k : std::invalid_argument
     using std::invalid_argument::invalid_argument;
 };
 
+struct invalid_min_samples_leaf : std::invalid_argument
+{
+    using std::invalid_argument::invalid_argument;
+};
+
 struct predict_before_fit : std::runtime_error
 {
     using std::runtime_error::runtime_error;
 };
 
-struct empty_train_sample : std::invalid_argument
+struct invalid_train_sample : std::invalid_argument
 {
     using std::invalid_argument::invalid_argument;
 };

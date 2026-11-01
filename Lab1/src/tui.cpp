@@ -30,6 +30,7 @@ void print_menu()
               << "2 - Print feature statistics\n"
               << "3 - Preprocess and write dataset\n"
               << "4 - Train kNN and predict test data\n"
+              << "5 - Train decision stump and predict test data\n"
               << "0 - Exit\n"
               << "Choose an action: ";
 }
@@ -214,6 +215,91 @@ void train_and_predict(const ds::Dataset& dataset)
     }
 }
 
+void train_and_predict_stump(const ds::Dataset& dataset)
+{
+    auto [train, test] = dataset.train_test_split(ds::TRAIN_PART);
+    train.fit();
+    test.fit_another(train);
+
+    std::map<std::string, double> category_codes;
+    const ds::Column& target = dataset.get_target();
+    const bool categorical =
+        std::holds_alternative<ds::CategirialColumn>(target);
+    if (categorical)
+    {
+        for (const auto& value : std::get<ds::CategirialColumn>(target).values)
+        {
+            if (!value.has_value())
+                throw std::invalid_argument("target contains missing values.");
+            category_codes.emplace(value.value(), category_codes.size());
+        }
+    }
+
+    const TargetValues train_target = encode_target(
+        train, category_codes.empty() ? nullptr : &category_codes);
+    const TargetValues test_target = encode_target(
+        test, category_codes.empty() ? nullptr : &category_codes);
+    const ds::Matrix train_features =
+        ds::build_matrix(train.transform(), train_target.encoded.size());
+    const ds::Matrix test_features =
+        ds::build_matrix(test.transform(), test_target.encoded.size());
+
+    const model::SplitCriterion criterion = categorical
+        ? model::SplitCriterion::Gini
+        : model::SplitCriterion::Variance;
+    model::DecisionStump stump(criterion, model::MIN_SAMPLES_LEAF);
+    stump.fit(train_features, train_target.encoded);
+    const std::vector<double> predictions = stump.predict(test_features);
+
+    std::cout << "\nDecision stump:\n"
+              << "Feature: " << stump.split_feature() << '\n'
+              << "Threshold: " << stump.split_threshold() << '\n';
+
+    std::mt19937 generator(std::random_device{}());
+    while (true)
+    {
+        std::cout << "\n1 - Print five random predictions\n"
+                  << "0 - Return to main menu\n"
+                  << "Choose an action: ";
+        char action;
+        if (!(std::cin >> action) || action == '0')
+            return;
+        if (action != '1')
+        {
+            std::cout << "Unknown command. Choose an item from the menu.\n";
+            continue;
+        }
+
+        const std::size_t sample_size = std::min<std::size_t>(5, predictions.size());
+        std::vector<std::size_t> sample_indices(predictions.size());
+        std::iota(sample_indices.begin(), sample_indices.end(), 0);
+        std::shuffle(sample_indices.begin(), sample_indices.end(), generator);
+        std::cout << "\nPredictions for " << sample_size
+                  << " random test objects:\n"
+                  << std::left << std::setw(12) << "Prediction"
+                  << "Actual\n";
+        for (std::size_t sample = 0; sample < sample_size; ++sample)
+        {
+            const std::size_t i = sample_indices[sample];
+            if (categorical)
+            {
+                const auto predicted_code = static_cast<std::size_t>(predictions[i]);
+                std::string predicted = std::to_string(predictions[i]);
+                for (const auto& [category, code] : category_codes)
+                    if (static_cast<std::size_t>(code) == predicted_code)
+                        predicted = category;
+                std::cout << std::left << std::setw(12) << predicted
+                          << test_target.displayed[i] << '\n';
+            }
+            else
+            {
+                std::cout << std::left << std::setw(12) << predictions[i]
+                          << test_target.displayed[i] << '\n';
+            }
+        }
+    }
+}
+
 int check_col_intervals(int val)
 {
     if (val <= 0)
@@ -267,6 +353,12 @@ int check_k(int val)
         throw std::invalid_argument("k must be greater than zero.\n");
     return val;
 }
+std::size_t check_min_samples_leaf(int val)
+{
+    if (val <= 0)
+        throw std::invalid_argument("min_sample_leaf must be greater than zero.\n");
+    return static_cast<std::size_t>(val);
+}
 model::DistanceType parse_distance(std::string s)
 {
     static const std::unordered_map<std::string, model::DistanceType> m =
@@ -306,7 +398,7 @@ int main(int argc, char* argv[])
         ("f,fill","Filling of missings numerics (mean/median/zero).",cxxopts::value<std::string>()
             ->default_value("median"))
         ("c,scale_numeric","The way numerics will scale (min-max/standartisation/robust_scaling).",cxxopts::value<std::string>()
-            ->default_value("robust"))
+            ->default_value("robust_scaling"))
         ("e,encode_categoric","The way categorial features will encode (one-hot/ordinal).",cxxopts::value<std::string>()
             ->default_value("one-hot"))
         ("t,train_part","The part of dataset thar will be used to train model. The value is in [0,1].",cxxopts::value<double>()
@@ -314,9 +406,11 @@ int main(int argc, char* argv[])
         ("k,k_nearest_neighbours","K in the kNN algorithm.",cxxopts::value<int>()
             ->default_value("5"))
         ("d,distance","The way of distance computing (euclid/manhattan/shebyshev).",cxxopts::value<std::string>()
-            ->default_value("manhatten"))
+            ->default_value("manhattan"))
         ("w,weighting","The way of weighting neighbours in kNN (equal/reverse).",cxxopts::value<std::string>()
             ->default_value("reverse"))
+        ("l,min_sample_leaf","Minimum possable size of sample split by decision stump.",cxxopts::value<int>()
+            ->default_value("10"))
         ("h,help","Print availible comands");
     
     auto parsed = opts.parse(argc, argv);
@@ -336,6 +430,8 @@ int main(int argc, char* argv[])
         model::K = check_k(parsed["k"].as<int>());
         model::DISTANCE = parse_distance(parsed["d"].as<std::string>());
         model::WEIGHTING = parse_weighting(parsed["w"].as<std::string>());
+        model::MIN_SAMPLES_LEAF =
+            check_min_samples_leaf(parsed["l"].as<int>());
     } catch (const std::invalid_argument& exc)
     {
         std::cerr  << exc.what() << "\n";
@@ -372,6 +468,9 @@ int main(int argc, char* argv[])
                     break;
                 case '4':
                     train_and_predict(dataset);
+                    break;
+                case '5':
+                    train_and_predict_stump(dataset);
                     break;
                 case '0':
                     std::cout << "\nExiting.\n";

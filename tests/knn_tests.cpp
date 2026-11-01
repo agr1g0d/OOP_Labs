@@ -115,10 +115,10 @@ void test_model_errors()
             model::KnnRegressor model(3, distance, model::WeightingType::equal);
             model.fit(train, target);
         },
-        "k larger than the training sample must be rejected at fit");
+        "k larger than the train sample must be rejected at fit");
 
     model::KnnRegressor too_large_k(3, distance, model::WeightingType::equal);
-    check_throws<exc::empty_train_sample>(
+    check_throws<exc::invalid_train_sample>(
         [&] { too_large_k.fit(empty_train, {}); },
         "empty training sample must be rejected");
     model::KnnRegressor target_size_check(1, distance, model::WeightingType::equal);
@@ -180,7 +180,7 @@ void test_classifier()
     check_close(reverse_result[0], 1.0, "reverse-weight classification is incorrect");
     check_close(reverse_result[1], 1.0, "reverse classification must handle exact matches");
 }
-} // namespace
+}
 
 int main()
 {
@@ -203,6 +203,6 @@ int main()
         return 1;
     }
 
-    std::cout << "All Lab 2 tests passed.\n";
+    std::cout << "All kNN tests passed.\n";
     return 0;
 }

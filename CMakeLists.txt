@@ -54,18 +54,37 @@ add_test(
     COMMAND dataset_tests "${CMAKE_CURRENT_SOURCE_DIR}/data/Autism-Adult-Data.csv"
 )
 
-add_executable(lab2_tests
-    tests/lab2_tests.cpp
+add_executable(knn_tests
+    tests/knn_tests.cpp
     Lab1/src/matrix.cpp
     Lab2/src/distance.cpp
     Lab2/src/model.cpp
 )
-target_include_directories(lab2_tests PRIVATE
+target_include_directories(knn_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/Lab1/headers"
     "${CMAKE_CURRENT_SOURCE_DIR}/Lab2/headers"
 )
 
 add_test(
-    NAME lab2_tests
-    COMMAND lab2_tests
+    NAME knn_tests
+    COMMAND knn_tests
+)
+
+add_executable(decision_stump_tests
+    tests/decision_stump_tests.cpp
+    Lab1/src/dataset.cpp
+    Lab1/src/matrix.cpp
+    Lab2/src/model.cpp
+)
+target_include_directories(decision_stump_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab1/headers"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Lab2/headers"
+)
+target_compile_definitions(decision_stump_tests PRIVATE
+    DATASET_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data/Autism-Adult-Data.csv"
+)
+
+add_test(
+    NAME decision_stump_tests
+    COMMAND decision_stump_tests
 )
